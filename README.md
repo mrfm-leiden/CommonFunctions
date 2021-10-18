@@ -10,21 +10,9 @@ Used to read a bunch of tdms files without the possibilty of getting an error in
 
 ## read_tdms
 Function written by Timon to read tdms files.
-  
-## readcalcfft
-Function that uses the read_tdms to read out a file, split the data in &lt;div&gt; pieces and calculate the fft of each piece. Not used a lot.
-  
+   
 ## takefourier
 Function to take the fourier transform of data_tdms.
-  
-## calcenergy
-Function that calculates the energy of the mode and the background energy next to the mode input.
-  
-## readblocks
-Function to append the data from multiple tdms_files of len(tdms_block) 
-  
-## calcspectrablocks
-Function that divides the files into blocks of &lt;size&gt; files, calculates the fft and saves a running average of the correlationmatrix.
   
 ## dftoa
 Function to calculate the amplitude of the z mode as a function of f and df.
