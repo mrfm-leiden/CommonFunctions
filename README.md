@@ -3,7 +3,7 @@
 This is the first version of commonfunctions, some functions will be deleted since they are rarely used. I will eventually elaborate more on all of the fuctions.
 
 ## Convert
-Used to convert seconds to an /<hours/>:/<minutes/>:/<seconds/> string.
+Used to convert seconds to an &lthours/>:/<minutes/>:/<seconds/> string.
   
 ## readtdms
 Used to read a bunch of tdms files without the possibilty of getting an error in between.
