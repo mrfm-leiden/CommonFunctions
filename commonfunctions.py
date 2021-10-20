@@ -20,6 +20,12 @@ kb = 1.38*10**-23
 T = 0.01
 Phi_0 = 2E-15
 
+# 99% of the time, this is how the 16 channel tdms files are set up.
+guralplist = ["topx", "topy", "topz", 
+              "celnx", "celny", "celnz", 
+              "celex", "celey", "celez", 
+              "1kx", "1ky", "1kz", 
+              "ptsound", "magsig", "sq", "none"]
 
 #------------------------------------------------------------------------------
 """Functions"""
@@ -28,14 +34,14 @@ def helpme():
     print("This file contains the functions we commonly use in our programs so we don't have to copy them in our notebooks")
     print("\nThe following functions can be used:")
     print("\tconvert(seconds)\t\t\t Convert seconds to <hours>:<minutes>:<seconds>")
-    print("\tread_tdms(filename)\t\t\t Read tdms_files")
+    print("\treadtdms(filename, group, channel)\t Read tdms_files")
     print("\ttakefourier(data_tdms,props_tdms)\t Just calculate the fft of an array")
     print("\tsmooth(array,binsize)\t\t\t Smooth a 1D array by taking the average of every <binsize> entries")
     print("\tpropstort(data,props)\t\t\t Obtain the real time stamps from the data array")
     print("\nTo use these functions, type cf.<function>\nFor help, type help(cf.<function>)")
     
 
-def convert(seconds): 
+def convert(seconds: float) -> str: 
     """
     Function that converts seconds to <hours>:<minutes>:<seconds>
     """
@@ -44,80 +50,72 @@ def convert(seconds):
     return "%d:%02d:%02d" % (hour, min, sec) 
 
 
-def readtdms(tdms_file_loc, groupname = 'Group', channelname = 'Channel'):
-	"""
-	Function used by Jaimy to read a bunch of tdms files without getting an error in between
-	"""
-    tdms_file = TdmsFile.read(tdms_file_loc)
-    try:
-        group = tdms_file[groupname]
-        channel = group[channelname]
-        data = channel[:]
-        props = channel.properties
-        return data, props
-    except:
-        return np.nan, np.nan	
-	
+def readtdms(filename: str, group: str = None, channel: str = None) -> tuple[dict, dict]:
+    """
+    Function that reads a tdms file and returns the data and properties.
+    
+    Parameters
+    ----------
+    filename : str
+        The path + name of the file.
+    group : str, optional
+        The name of the group the data is requested from.
+        The default is None, this means that the first group (and only group for 99.99999% of the time) in the file is chosen.
+    channel : str, optional
+        The name of the channel the data is requested from.
+        The default is None, this means that all of the channels inside the given group will be returned.
 
-def read_tdms(filename, group_name='Group', channel_name='Channel'):
+    Returns
+    -------
+    data: dict
+        If no channel was specified, the data will be a dictionary especially constructed for the 16 channel guralp data.
+        If a channel was specified, the data will be a dict containing both the time and the data from that channel.
+    props: dict
+        The properties of the last read channel, will be the same for all channels inside a file.
     """
-    function made by Timon that reads tdms files and returns the data inside the file
-    inputs:
-        filename: Str that contains path + filename.type
-        group_name: The name of the group inside the tdms that needs to be read
-        channel_name: The name of the channel inside the tdms file that needs to be read
-    ouputs:
-        data: An array containing the data inside the chosen channel
-        props: properties of the data inside the channel, includes the data+time the file was made and the step size (and more)
-    """
-    # See https://readthedocs.org/projects/nptdms/downloads/pdf/latest/
-    # 
-    # Code to find group and channel names:
-    # tdms_file = TdmsFile.read("my_file.tdms")
-    # all_groups = tdms_file.groups()
-    
-    # group = tdms_file["group name"]
-    # all_group_channels = group.channels()
-    
-    # channel = group["channel name"]
-    
-    # To obtain time data
-    # time = np.arange(0, props['wf_increment']*len(data), props['wf_increment'])
-    
-    # time = channel.time_track()
-    
-    # Read .tdms file
     tdms_file = TdmsFile(filename)
-    
-    if group_name == 'unknown':
-        # If group and channel name are UNKNOWN (indicated by zero): 
-        # Only take data from the first group and the first channel in this group!
-        # SO BE AWARE THAT THIS FUNCTION ONLY READS THE FIRST GROUP AND CHANNEL. 
-        group = tdms_file.groups()[0]
-        group_name = group.name
+    if group == None:
+        tdmsgroup = tdms_file.groups()[0]
+    else:
+        tdmsgroup = tdms_file[group]
 
-        channel = group.channels()[0]
-        channel_name = channel.name
-            
-    # Read data from the specified group and channel
-    channel_object = tdms_file.object(group_name, channel_name)
-    data = channel_object.data
-    props = channel_object.properties
-    
+    data = {}
+    if channel == None:
+        for _, tdmschannel in enumerate(tdmsgroup.channels()):
+            if _ == 0:
+                data['time'] = tdmschannel.time_track()
+            data[guralplist[_]] = tdmschannel[:]
+            props = tdmschannel.properties
+    else:
+        tdmschannel = tdmsgroup[channel]
+        data['time'] = tdmschannel.time_track()
+        data['data'] = tdmschannel[:]
+        props = tdmschannel.properties
+
     return data, props
 
 
-def takefourier(data: numpy.ndarray, props: dict, cutoff: int = 300) -> tuple[numpy.ndarray, numpy.ndarray]:
+def takefourier(data: np.ndarray, props: dict, cutoff: int = 300) -> tuple[np.ndarray, np.ndarray]:
     """
-    Function to take the fourier transform of tdms data.
-    inputs:
-        data: 1D array to take the fourier transform of.
-        props: properties of <data>, used to find the time increments of <data>.
-    outputs:
-        freqs: 1D array containing the frequencies of the fft (starts at 0 and ends before cutoff).
-        fft: 1D array of the fft of <data>.
+    Function to take the fourier transform of tdms data after it is multiplied by a window-function.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The array containing the data the FFT needs to be calculated from.
+    props : dict
+        The properties dictionary containing the timesteps of <data>.
+    cutoff : int, optional
+        The cutoff point of the FFT in Hz.
+        Default is 300 Hz since that was mainly used for the Levitated Zeppelin.
+
+    Returns
+    -------
+    freqs: np.ndarray
+        The array containing the frequencies (x-axis) for the FFT of <data>.
+    fft: np.ndarray
+        The array containing the FFT of <data>.
     """
-    
     measure_freq = 1. / props["wf_increment"]
     
     freqs = np.fft.fftfreq(data.size, d=props["wf_increment"]) #x-as
@@ -126,11 +124,10 @@ def takefourier(data: numpy.ndarray, props: dict, cutoff: int = 300) -> tuple[nu
     window = 0.5*(1-np.cos(window))
 
     data = data * window
-
-    # Only save the spectrum between 0 and 300 Hz.  
+ 
     freq_res = measure_freq/len(data_tdms)
     
-    #factor 1.63 from hanning window correction, y-as    
+    #factor 1.63 from hanning window correction, y-axis  
     fft = np.fft.fft(data)[(freqs>=0)*(freqs<cutoff)]*1.63/(len(data)*np.sqrt(freq_res))
 
     # Frequencies corresponding to the fft data (between 0 and <cutoff> Hz). 
@@ -138,27 +135,42 @@ def takefourier(data: numpy.ndarray, props: dict, cutoff: int = 300) -> tuple[nu
     return freqs, fft
 
 
-def smooth(array: list, binsize: int) -> numpy.ndarray:
+def smooth(array: list, binsize: int) -> np.ndarray:
     """
     Function to smooth the input array by dividing it into bits of size <binsize> and
     returning and array containing the average of the bits.
-    inputs:
-        array: 1D array to smooth
-        binsize: int, the amount of data points the averages should be taking over
-    outputs:
-        The smoothed array of size len(array)/binsize 
+
+    Warning: len(array) should be dividible by <binsize>
+
+    Parameters
+    ----------
+    array : np.ndarray
+        The array that needs to be smoothed.
+    binsize : int
+        The amount of data points the averages should be taking over.
+    Returns
+    -------
+    np.ndarray
+        The smoothed array of size len(array)/binsize
     """
     
     return np.mean(np.reshape(array, (int(len(array)/binsize), binsize)), axis = 1)
 
 
-def propstort(data: numpy.ndarray, props: dict) -> list:
+def propstort(data: np.ndarray, props: dict) -> list:   
     '''
     Function to obtain the time array using real time from data and props
-    inputs:
-        data: the data array from the tdms file
-        props: the props array from the tdms file
-    outputs: time array containing the time and date info
+
+    Parameters
+    ----------
+    data : np.ndarray
+        The data array one wants the real time from.
+    props : dict
+        The properties dictionary that was made together with the data file.
+    Returns
+    -------
+    np.ndarray
+        The time array containing the time and date info
     '''
     dt64 = props['wf_start_time']
     unix_epoch = np.datetime64(0, 's')
@@ -166,3 +178,8 @@ def propstort(data: numpy.ndarray, props: dict) -> list:
     seconds_since_epoch = (dt64 - unix_epoch) / one_second
     customdate = datetime.datetime.utcfromtimestamp(seconds_since_epoch)
     return [customdate + datetime.timedelta(seconds=i*props['wf_increment']) for i in range(len(data))]
+
+
+if __name__ == '__main__':
+    helpme()
+
